@@ -1,0 +1,20 @@
+# Git attributes for consistent behavior
+* text=auto
+
+# Python files
+*.py text eol=lf
+
+# YAML and JSON
+*.yaml linguist-language=YAML
+*.json linguist-language=JSON
+
+# Markdown
+*.md linguist-language=Markdown
+
+# Denote binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary

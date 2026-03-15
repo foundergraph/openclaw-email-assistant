@@ -1,0 +1,39 @@
+{# Email response templates for OpenClaw Email Assistant #}
+
+{# Meeting confirmation email #}
+meeting_confirmation: |
+  Hi {{ sender_name }},
+
+  Your meeting has been scheduled:
+
+  **Title:** {{ meeting_title }}
+  **Time:** {{ start_time }} - {{ end_time }} ({{ timezone }})
+  **Location:** {{ meeting_link }}
+
+  {{ additional_notes }}
+
+  See you there!
+
+  Best,
+  {{ assistant_name }}
+
+{# Bounce notification #}
+bounce_notice: |
+  [Auto-generated] Bounce detected for recipient: {{ bounced_email }}
+  Original subject: {{ original_subject }}
+  Status: {{ bounce_status }}
+
+  (This email is for record-keeping only.)
+
+{# Unknown command fallback #}
+unknown_command: |
+  Hi,
+
+  I'm an email assistant. I can help you:
+  - Schedule meetings (e.g., "明天下午3点开会")
+  - Answer questions about my capabilities
+
+  Please send me a clear request.
+
+  Best,
+  {{ assistant_name }}

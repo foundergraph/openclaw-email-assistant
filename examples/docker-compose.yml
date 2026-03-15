@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  openclaw-gateway:
+    image: openclaw/gateway:latest
+    container_name: openclaw-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - OPENCLAW_API_KEY=${OPENCLAW_API_KEY}
+      - OPENCLAW_TELEGRAM_TOKEN=${OPENCLAW_TELEGRAM_TOKEN}
+    volumes:
+      - ./openclaw-data:/data
+    restart: unless-stopped
+
+  email-assistant:
+    build: .
+    container_name: email-assistant
+    environment:
+      - OPENCLAW_API_KEY=${OPENCLAW_API_KEY}
+      - GMAIL_CREDENTIALS_JSON=${GMAIL_CREDENTIALS_JSON}
+    depends_on:
+      - openclaw-gateway
+    volumes:
+      - ~/.openclaw/email-assistant:/app/config:ro
+      - ~/.openclaw/logs:/app/logs
+    restart: unless-stopped

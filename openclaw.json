@@ -1,0 +1,25 @@
+{
+  "skill": {
+    "name": "email-assistant",
+    "version": "0.1.0",
+    "description": "AI-powered email assistant with meeting scheduling and bounce handling",
+    "entrypoint": "skill.py:main",
+    "config_schema": "config/schema.json",
+    "default_config": "config/default.yaml",
+    "author": "Yuchuan Xu",
+    "license": "MIT",
+    " homepage": "https://github.com/yourusername/openclaw-email-assistant",
+    "tags": ["email", "automation", "ai", "openclaw"]
+  },
+  "capabilities": [
+    "email_processing",
+    "calendar_scheduling",
+    "nl_parsing"
+  ],
+  "permissions": {
+    "gmail": [
+      "https://mail.google.com/",
+      "https://www.googleapis.com/auth/calendar"
+    ]
+  }
+}

@@ -1,0 +1,127 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "OpenClaw Email Assistant Configuration",
+  "description": "Configuration schema for email assistant skill",
+  "type": "object",
+  "required": ["email", "openclaw"],
+  "properties": {
+    "email": {
+      "type": "object",
+      "required": ["credentials_file", "token_file", "monitor_email"],
+      "properties": {
+        "credentials_file": {
+          "type": "string",
+          "description": "Path to Gmail API credentials JSON file"
+        },
+        "token_file": {
+          "type": "string",
+          "description": "Path to store OAuth token (auto-refreshed)"
+        },
+        "monitor_email": {
+          "type": "string",
+          "format": "email",
+          "description": "Email address to monitor"
+        },
+        "bcc_email": {
+          "type": "string",
+          "format": "email",
+          "description": "Optional BCC address for all outgoing replies"
+        }
+      }
+    },
+    "whitelisted_senders": {
+      "type": "array",
+      "items": {"type": "string", "format": "email"},
+      "description": "Senders who can trigger bot without @mention"
+    },
+    "mention_triggers": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "If any appears in email body, bot will respond"
+    },
+    "openclaw": {
+      "type": "object",
+      "required": ["gateway_url", "api_key"],
+      "properties": {
+        "gateway_url": {
+          "type": "string",
+          "description": "OpenClaw gateway URL"
+        },
+        "api_key": {
+          "type": "string",
+          "description": "OpenClaw API key"
+        }
+      }
+    },
+    "features": {
+      "type": "object",
+      "properties": {
+        "strip_thinking": {"type": "boolean"},
+        "mark_bounces_read": {"type": "boolean"},
+        "chinese_nl_parser": {"type": "boolean"},
+        "default_meeting_duration": {"type": "integer", "minimum": 5, "maximum": 480}
+      },
+      "default": {
+        "strip_thinking": true,
+        "mark_bounces_read": true,
+        "chinese_nl_parser": false,
+        "default_meeting_duration": 30
+      }
+    },
+    "calendar": {
+      "type": "object",
+      "properties": {
+        "calendar_id": {"type": "string", "default": "primary"},
+        "always_invite": {
+          "type": "array",
+          "items": {"type": "string", "format": "email"}
+        },
+        "title_prefix": {"type": "string"}
+      },
+      "default": {
+        "calendar_id": "primary",
+        "always_invite": [],
+        "title_prefix": "Meeting scheduled via OpenClaw"
+      }
+    },
+    "logging": {
+      "type": "object",
+      "properties": {
+        "level": {"type": "string", "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]},
+        "format": {"type": "string"},
+        "file": {"type": "string"},
+        "max_bytes": {"type": "integer"},
+        "backup_count": {"type": "integer"}
+      },
+      "default": {
+        "level": "INFO",
+        "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        "file": "~/.openclaw/logs/email-assistant.log",
+        "max_bytes": 10485760,
+        "backup_count": 5
+      }
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "max_emails_per_run": {"type": "integer", "minimum": 1, "maximum": 1000},
+        "processing_timeout_seconds": {"type": "integer", "minimum": 30, "maximum": 3600}
+      },
+      "default": {
+        "max_emails_per_run": 50,
+        "processing_timeout_seconds": 300
+      }
+    },
+    "system_prompt": {
+      "type": "string",
+      "description": "Custom system prompt for OpenClaw chat"
+    },
+    "notion": {
+      "type": "object",
+      "properties": {
+        "api_key": {"type": "string"},
+        "tasks_database_id": {"type": "string"}
+      }
+    }
+  }
+}

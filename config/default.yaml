@@ -1,0 +1,68 @@
+# OpenClaw Email Assistant Configuration
+
+email:
+  # Gmail API credentials (downloaded from Google Cloud Console)
+  credentials_file: "~/.openclaw/email-assistant/credentials.json"
+  # Token storage (auto-refreshed by OAuth flow)
+  token_file: "~/.openclaw/email-assistant/token.json"
+  # Email address to monitor and send from (usually same as OAuth client email)
+  monitor_email: "your-bot-email@example.com"
+  # Optional BCC address for all outgoing emails
+  bcc_email: ""
+
+# Sender whitelist — only these senders can trigger the bot without @mention
+whitelisted_senders:
+  - "veryyuchuan@hotmail.com"
+  - "allen@foundergraphai.com"
+
+# Mention triggers — if body contains any of these, bot will respond even if sender not whitelisted
+mention_triggers:
+  - "@yuchuanxu"
+  - "@jessie"
+  - "@Jessie"
+
+openclaw:
+  # Gateway URL (default for local installation)
+  gateway_url: "http://localhost:8080"
+  # API key for skill registration (can also use env var OPENCLAW_API_KEY)
+  api_key: "${OPENCLAW_API_KEY}"
+
+features:
+  # Strip "thinking..." markers from AI-generated replies
+  strip_thinking: true
+  # Auto-mark bounce notifications as read
+  mark_bounces_read: true
+  # Chinese natural language parser (not used in English-only version)
+  chinese_nl_parser: false
+  # Default meeting duration (minutes)
+  default_meeting_duration: 30
+
+calendar:
+  # Calendar ID to create events in (usually 'primary')
+  calendar_id: "primary"
+  # Attendees to always include (e.g., your main address)
+  always_invite:
+    - "you@example.com"
+  # Default meeting title prefix
+  title_prefix: "Meeting scheduled via OpenClaw"
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "~/.openclaw/logs/email-assistant.log"
+  max_bytes: 10485760  # 10MB
+  backup_count: 5
+
+# Email processing limits
+limits:
+  max_emails_per_run: 50
+  processing_timeout_seconds: 300
+
+# Optional custom system prompt (overrides default)
+# system_prompt: |
+#   You are Jessie...
+
+# Notion integration (for task creation)
+notion:
+  api_key: "${NOTION_API_KEY}"
+  tasks_database_id: "5c3b6dbb-8c62-47d1-be65-ab807e8de328"

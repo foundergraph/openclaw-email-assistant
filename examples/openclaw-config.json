@@ -1,0 +1,8 @@
+{
+  "skills": {
+    "email-assistant": {
+      "module": "/path/to/openclaw-email-assistant/skill.py",
+      "config": "/path/to/openclaw-email-assistant/config/local.yaml"
+    }
+  }
+}
