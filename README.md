@@ -31,7 +31,7 @@ An AI-powered email bot built for [OpenClaw](https://openclaw.ai) that intellige
 
 1. **Clone the repo**
    ```bash
-   git clone https://github.com/yourusername/openclaw-email-assistant.git
+   git clone https://github.com/foundergraph/openclaw-email-assistant.git
    cd openclaw-email-assistant
    ```
 
@@ -156,3 +156,7 @@ Built for the OpenClaw community. Special thanks to the OpenClaw team for the am
 ---
 
 **Questions?** Open an issue or join the [OpenClaw Discord](https://discord.gg/clawd).
+
+**Maintainer:** Yuchuan Xu — [@foundergraph](https://github.com/foundergraph)
+
+---

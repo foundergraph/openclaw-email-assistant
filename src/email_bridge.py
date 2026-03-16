@@ -8,6 +8,7 @@ import json
 import time
 import logging
 import datetime
+import base64
 import requests
 from typing import Dict, Any, Optional, List
 
