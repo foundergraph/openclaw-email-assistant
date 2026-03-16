@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "AI-powered email assistant for OpenClaw with meeting scheduling and bounce handling"
 readme = "README.md"
 license = { file = "LICENSE" }
-authors = [{ name = "Yuchuan Xu", email = "yuchuanxu@example.com" }]
+authors = [{ name = "Yuchuan Xu", email = "allen@foundergraphai.com" }]
 keywords = ["openclaw", "email", "automation", "ai", "gmail", "calendar"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -35,9 +35,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/openclaw-email-assistant"
-Repository = "https://github.com/yourusername/openclaw-email-assistant"
-Issues = "https://github.com/yourusername/openclaw-email-assistant/issues"
+Homepage = "https://github.com/foundergraph/openclaw-email-assistant"
+Repository = "https://github.com/foundergraph/openclaw-email-assistant"
+Issues = "https://github.com/foundergraph/openclaw-email-assistant/issues"
 
 [project.scripts]
 # No CLI entry point; this is an OpenClaw skill
