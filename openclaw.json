@@ -8,7 +8,7 @@
     "default_config": "config/default.yaml",
     "author": "Yuchuan Xu",
     "license": "MIT",
-    " homepage": "https://github.com/yourusername/openclaw-email-assistant",
+    " homepage": "https://github.com/foundergraph/openclaw-email-assistant",
     "tags": ["email", "automation", "ai", "openclaw"]
   },
   "capabilities": [
