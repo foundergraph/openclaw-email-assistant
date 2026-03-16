@@ -336,7 +336,7 @@ For other emails, write a short, friendly reply as Jessie.""" ) },
                             break
 
                         if func_name == "schedule_meeting":
-                            reply = self._handle_schedule_meeting(email_text)
+                            reply = self._handle_schedule_meeting(email_text, recipient_emails)
                         elif func_name == "create_notion_task":
                             reply = self._handle_create_notion_task(email_text, sender)
                         break
@@ -352,7 +352,7 @@ For other emails, write a short, friendly reply as Jessie.""" ) },
         except Exception as e:
             self.logger.error(f"Error processing email: {e}")
 
-    def _handle_schedule_meeting(self, email_text: str) -> Optional[str]:
+    def _handle_schedule_meeting(self, email_text: str, recipients: list) -> Optional[str]:
         """
         Schedule a meeting based on email content.
         Uses google_meetings_skill if available, else fallback.
@@ -364,16 +364,16 @@ For other emails, write a short, friendly reply as Jessie.""" ) },
             if google_meetings_path not in sys.path:
                 sys.path.insert(0, google_meetings_path)
             from skill import schedule_meeting as gm_schedule_meeting
-            result = gm_schedule_meeting(email_text)
+            result = gm_schedule_meeting(email_text, recipients=recipients)
             if result:
                 return f"✅ Meeting scheduled: {result.get('start')} — {result.get('meet_link')}"
         except Exception as e:
             self.logger.warning(f"google_meetings_skill not available: {e}")
 
         # Fallback: simple stub
-        return self._schedule_meeting_stub(email_text)
+        return self._schedule_meeting_stub(email_text, recipients)
 
-    def _schedule_meeting_stub(self, email_text: str) -> Optional[str]:
+    def _schedule_meeting_stub(self, email_text: str, recipients: list) -> Optional[str]:
         """Very basic meeting scheduling fallback."""
         if not self.calendar_service:
             self.logger.warning("Calendar service not available")
@@ -384,8 +384,15 @@ For other emails, write a short, friendly reply as Jessie.""" ) },
             start = now.replace(hour=9, minute=0, second=0, microsecond=0) + timedelta(days=1)
             end = start + timedelta(minutes=self.default_duration)
 
-            attendees = list(self.always_invite)
-            # Could extract from email_text, but skip for stub
+            # Use provided recipients (exclude sender duplicates and bot email)
+            attendees = list(recipients) if recipients else []
+            # Ensure unique and remove any empty
+            attendees = list(set([e for e in attendees if e and '@' in e]))
+            # Also always include the main address from config
+            always_invite = self.config.get('calendar', {}).get('always_invite', [])
+            for addr in always_invite:
+                if addr not in attendees:
+                    attendees.append(addr)
 
             event = {
                 'summary': 'Meeting scheduled by Jessie',

@@ -43,15 +43,21 @@ def extract_email_address(header: str) -> str:
     return header.strip()
 
 def parse_email_address_list(header: str) -> List[str]:
-    """Parse comma-separated email addresses from To/Cc headers."""
+    """Parse comma-separated email addresses from To/Cc headers using getaddresses."""
     if not header:
         return []
-    addresses = []
-    for part in header.split(','):
-        addr = extract_email_address(part)
-        if addr and '@' in addr:
-            addresses.append(addr)
-    return addresses
+    try:
+        from email.utils import getaddresses
+        results = getaddresses([header])
+        return [addr for name, addr in results if addr and '@' in addr]
+    except Exception:
+        # Fallback to simple split-based method
+        addresses = []
+        for part in header.split(','):
+            addr = extract_email_address(part)
+            if addr and '@' in addr:
+                addresses.append(addr)
+        return addresses
 
 def extract_email_body(payload: Dict[str, Any]) -> str:
     """Extract plain text body from Gmail message payload."""
@@ -73,36 +79,48 @@ def strip_thinking(text: str) -> str:
     """Remove AI thinking/analysis markers from the start of a message."""
     if not text:
         return text
+
     lines = text.splitlines()
+
+    # Patterns that unambiguously indicate meta/thinking output
     thinking_starters = [
-        r"^i'll",
-        r"^let me",
-        r"^now i",
-        r"^first,?",
-        r"^then,",
-        r"^the file",
-        r"^i can see",
-        r"^i need to",
+        r"^let me think",
+        r"^i'll think",
+        r"^thinking",
+        r"^first,?\s+i(?:'?ll| will)? (?:check|look|verify|see)",
+        r"^first,?\s*let me",
+        r"^i need to (?:think|check|look|consider)",
         r"^checking",
         r"^searching",
-        r"^found",
-        r"^ok,?",
-        r"^great!",
-        r"^perfect!",
+        r"^one moment",
+        r"^hold on",
+        r"^ok,?\s*i(?:'?ll| will)",
+        r"^great!?\s*i(?:'?ll| will)",
+        r"^perfect!?\s*i(?:'?ll| will)",
         r"^success!",
-        r"^done\.?</li>",
+        r"^done\.?",
         r"^< ?li ?>",
         r"^<ol>",
         r"^<ul>",
-        r"^\d+\.",
-        r"^\•",
     ]
     pattern = re.compile("|".join(thinking_starters), re.IGNORECASE)
+
+    # Remove leading blank lines
+    while lines and not lines[0].strip():
+        lines.pop(0)
+
+    # Remove thinking lines; if all lines removed, return original
+    removed = 0
     while lines and pattern.match(lines[0].strip()):
         lines.pop(0)
+        removed += 1
+
+    if removed and not any(line.strip() for line in lines):
+        return text.strip()
+
     cleaned = "\n".join(lines).strip()
-    cleaned = re.sub(r"^(<[ou]l>|<li>)+", "", cleaned, flags=re.IGNORECASE)
-    return cleaned.strip()
+    cleaned = re.sub(r"^(<[ou]l>)+", "", cleaned, flags=re.IGNORECASE).strip()
+    return cleaned
 
 def fill_placeholders(obj: Any, mapping: Dict[str, str]) -> Any:
     """Recursively replace placeholders like {key} in dicts/lists/strings."""
