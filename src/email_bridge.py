@@ -322,6 +322,9 @@ For other emails, write a short, friendly reply as Jessie.""" ) },
             tool_calls = message.get("tool_calls", [])
             message_content = message.get("content", "").strip()
 
+            # Extract recipients from original email (To + Cc)
+            recipient_emails = email_data.get('recipient_emails', [])
+
             reply = None
             if tool_calls:
                 for call in tool_calls:
