@@ -3,7 +3,7 @@
 import base64
 import re
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -60,19 +60,73 @@ def parse_email_address_list(header: str) -> List[str]:
         return addresses
 
 def extract_email_body(payload: Dict[str, Any]) -> str:
-    """Extract plain text body from Gmail message payload."""
+    """Extract plain text body from Gmail message payload (recursive)."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    def _extract(part: Dict[str, Any]) -> Optional[str]:
+        mime = part.get('mimeType', '')
+        if mime == 'text/plain':
+            data = part.get('body', {}).get('data', '')
+            if data:
+                try:
+                    return base64.urlsafe_b64decode(data).decode('utf-8')
+                except Exception as e:
+                    logger.warning(f"Failed to decode body part: {e}")
+                    return None
+        # If multipart, recurse into parts
+        if 'parts' in part:
+            for sub in part['parts']:
+                result = _extract(sub)
+                if result:
+                    return result
+        return None
+
     try:
-        if 'parts' in payload:
-            for part in payload['parts']:
-                if part['mimeType'] == 'text/plain':
-                    data = part['body'].get('data', '')
-                    if data:
-                        return base64.urlsafe_b64decode(data).decode('utf-8')
-        elif 'body' in payload and 'data' in payload['body']:
+        result = _extract(payload)
+        if result:
+            return result
+        # Fallback: try to get any text/plain at top level
+        if 'body' in payload and 'data' in payload['body']:
             data = payload['body']['data']
-            return base64.urlsafe_b64decode(data).decode('utf-8')
+            try:
+                return base64.urlsafe_b64decode(data).decode('utf-8')
+            except Exception as e:
+                logger.warning(f"Failed to decode fallback body: {e}")
+        # Fallback to text/html: strip tags
+        def _extract_html(part: Dict[str, Any]) -> Optional[str]:
+            mime = part.get('mimeType', '')
+            if mime == 'text/html':
+                data = part.get('body', {}).get('data', '')
+                if data:
+                    try:
+                        html = base64.urlsafe_b64decode(data).decode('utf-8')
+                    except UnicodeDecodeError:
+                        # Fallback decoding with replacement characters or latin1
+                        try:
+                            html = base64.urlsafe_b64decode(data).decode('utf-8', errors='replace')
+                        except Exception:
+                            html = base64.urlsafe_b64decode(data).decode('latin1')
+                        # Simple strip of tags
+                        import re
+                        text = re.sub(r'<[^>]+>', '', html)
+                        # Collapse whitespace
+                        text = re.sub(r'\s+', ' ', text).strip()
+                        return text
+                    except Exception as e:
+                        logger.warning(f"Failed to decode HTML fallback: {e}")
+                        return None
+            if 'parts' in part:
+                for sub in part['parts']:
+                    result = _extract_html(sub)
+                    if result:
+                        return result
+            return None
+        html_result = _extract_html(payload)
+        if html_result:
+            return html_result
     except Exception as e:
-        logger.error(f"Failed to extract body: {e}")
+        logger.error(f"Failed to extract body: {e}", exc_info=True)
     return "[Could not extract email body]"
 
 def strip_thinking(text: str) -> str:
@@ -102,6 +156,30 @@ def strip_thinking(text: str) -> str:
         r"^< ?li ?>",
         r"^<ol>",
         r"^<ul>",
+        r"^i'll check",
+        r"^i've reviewed",
+        r"^based on my (?:check|review)",
+        r"^i've checked",
+        r"^reviewing",
+        r"^analyzing",
+        r"^reading",
+        r"^understanding",
+        r"^memory",
+        r"^context",
+        # New: any "I'll <action>" or "Let me <action>" describing internal processing
+        r"^i'll (?:use|call|invoke|trigger|run|execute|process|handle|schedule|create|send|lookup|find|get|fetch|generate)",
+        r"^i will (?:use|call|invoke|trigger|run|execute|process|handle|schedule|create|send|lookup|find|get|fetch|generate)",
+        r"^i'm (?:using|calling|invoking|triggering|running|executing|processing|handling|scheduling|creating|sending|looking up|fetching|generating)",
+        r"^i've (?:used|called|invoked|triggered|ran|executed|processed|handled|scheduled|created|sent|looked up|fetched|generated)",
+        r"^let me (?:use|call|invoke|trigger|run|execute|process|handle|schedule|create|send|lookup|find|get|fetch|generate)",
+        r"^using (?:the )?(?:skill|tool|function|system|api)",
+        r"^calling (?:the )?(?:skill|tool|function|system|api)",
+        r"^processing (?:with|via|using)",
+        r"^generating ",
+        r"^creating ",
+        r"^running ",
+        r"^executing ",
+        r"^invoking ",
     ]
     pattern = re.compile("|".join(thinking_starters), re.IGNORECASE)
 

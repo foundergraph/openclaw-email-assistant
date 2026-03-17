@@ -136,6 +136,7 @@ class EmailBridge:
 
     def check_new_emails(self):
         """Poll Gmail for unread messages and process them."""
+        self.logger.debug("🔍 check_new_emails invoked (polling)")
         try:
             results = self.service.users().messages().list(
                 userId='me',
@@ -143,6 +144,7 @@ class EmailBridge:
                 maxResults=self.config.get('limits', {}).get('max_emails_per_run', 50)
             ).execute()
             messages = results.get('messages', [])
+            self.logger.info(f"Gmail list returned {len(messages)} messages (estimate={results.get('resultSizeEstimate')})")
 
             for msg in messages:
                 email_id = msg['id']
@@ -156,6 +158,7 @@ class EmailBridge:
                 ).execute()
 
                 email_data = self._extract_email_data(email)
+                self.logger.debug(f"Extracted body (first 200 chars): {email_data['body'][:200]!r}")
 
                 # Skip self-sent
                 if email_data["from_email"].lower() == self.monitor_email.lower():
@@ -178,6 +181,7 @@ class EmailBridge:
 
                 # Process
                 self.logger.info(f"📧 Processing email from: {email_data['from']} - Subject: {email_data['subject']}")
+                self.logger.debug(f"Body (first 200 chars): {email_data['body'][:200]!r}")
                 self._process_email(email_data)
 
                 self.processed_emails.add(email_id)
@@ -201,7 +205,7 @@ class EmailBridge:
         subject = get_header('subject')
         to_header = get_header('to')
         cc_header = get_header('cc')
-        body = extract_email_body(email)
+        body = extract_email_body(email['payload'])
 
         sender_email = extract_email_address(from_header)
         recipient_emails = []
@@ -279,8 +283,9 @@ class EmailBridge:
             ]
 
             # Build OpenClaw API request
+            agent_id = self.config.get('openclaw', {}).get('agent_id', 'email_assistant')
             payload = {
-                "agentId": "email_assistant",
+                "agentId": agent_id,
                 "model": "openclaw",
                 "thinking": "off",
                 "messages": [
@@ -308,7 +313,7 @@ For other emails, write a short, friendly reply as Jessie.""" ) },
 
             self.logger.info("Calling OpenClaw to classify email...")
             try:
-                response = requests.post(api_url, headers=headers, json=payload, timeout=30)
+                response = requests.post(api_url, headers=headers, json=payload, timeout=120)
                 response.raise_for_status()
             except requests.exceptions.Timeout:
                 self.logger.error("OpenClaw API timeout")
