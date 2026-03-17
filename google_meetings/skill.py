@@ -755,6 +755,21 @@ def schedule_meeting(request_text: str, recipients: list = None):
     except ValueError:
         pass
 
+    # Add the sender (from email) to the meeting if not already present
+    # Extract From header from the raw request text
+    from_match = re.search(r'^From:\s*(.+)$', request_text, re.MULTILINE | re.IGNORECASE)
+    if from_match:
+        from_header = from_match.group(1).strip()
+        # Extract email address from header (e.g., "Name <email>" or just "email")
+        if '<' in from_header:
+            sender_email = from_header.split('<')[-1].split('>')[0].strip()
+        else:
+            # Take the last whitespace-separated token as the email
+            sender_email = from_header.strip().split()[-1]
+        # Validate basic email format
+        if '@' in sender_email and sender_email != USER_EMAIL and sender_email not in attendees:
+            attendees.append(sender_email)
+
     # 3. 初始化日历服务
     try:
         service = get_google_service()
@@ -776,10 +791,6 @@ def schedule_meeting(request_text: str, recipients: list = None):
         else:
             conflict_list = "\n".join([f"  • {c['start'].strftime('%H:%M')}-{c['end'].strftime('%H:%M')}: {c['summary']}" for c in conflicts[:3]])
             return f"⚠️ Time conflict! Existing meetings:\n{conflict_list}\nPlease choose another time."
-
-    # 5. 确保 allen@foundergraphai.com 在参与者列表中 (可作为协调人)
-    if 'allen@foundergraphai.com' not in attendees:
-        attendees.append('allen@foundergraphai.com')
 
     # 5. 生成会议标题（尝试 LLM 增强）
     summary = generate_meeting_title(request_text, parsed.get('summary'))
