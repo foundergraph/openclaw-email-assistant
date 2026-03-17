@@ -313,11 +313,22 @@ For other emails, write a short, friendly reply as Jessie.""" ) },
 
             self.logger.info("Calling OpenClaw to classify email...")
             try:
-                response = requests.post(api_url, headers=headers, json=payload, timeout=120)
+                response = requests.post(api_url, headers=headers, json=payload, timeout=180)
                 response.raise_for_status()
             except requests.exceptions.Timeout:
-                self.logger.error("OpenClaw API timeout")
-                return
+                self.logger.error("OpenClaw API timeout — will retry once")
+                # Retry once after brief wait
+                import time
+                time.sleep(2)
+                try:
+                    response = requests.post(api_url, headers=headers, json=payload, timeout=180)
+                    response.raise_for_status()
+                except requests.exceptions.Timeout:
+                    self.logger.error("OpenClaw API timeout on retry — giving up")
+                    return
+                except requests.exceptions.RequestException as e:
+                    self.logger.error(f"OpenClaw API error on retry: {e}")
+                    return
             except requests.exceptions.RequestException as e:
                 self.logger.error(f"OpenClaw API error: {e}")
                 return
@@ -363,20 +374,25 @@ For other emails, write a short, friendly reply as Jessie.""" ) },
     def _handle_schedule_meeting(self, email_text: str, recipients: list) -> Optional[str]:
         """
         Schedule a meeting based on email content.
-        Uses google_meetings_skill if available, else fallback.
+        Uses google_meetings skill bundled in this repo.
         """
-        # Try to import google_meetings_skill
         try:
-            google_meetings_path = "/home/ubuntu/.openclaw/workspace/skills/google-meetings-scheduler"
+            # Import from local google_meetings package (relative to repo root)
             import sys
-            if google_meetings_path not in sys.path:
-                sys.path.insert(0, google_meetings_path)
-            from skill import schedule_meeting as gm_schedule_meeting
+            import os
+            # Get the repo root: this file is in src/, so parent is repo root
+            repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            if repo_root not in sys.path:
+                sys.path.insert(0, repo_root)
+            from google_meetings.skill import schedule_meeting as gm_schedule_meeting
+
+            # email_text contains headers + body. We also have recipients list.
+            # The skill will extract the sender itself from the From header.
             result = gm_schedule_meeting(email_text, recipients=recipients)
             if result:
                 return f"✅ Meeting scheduled: {result.get('start')} — {result.get('meet_link')}"
         except Exception as e:
-            self.logger.warning(f"google_meetings_skill not available: {e}")
+            self.logger.warning(f"google_meetings skill not available: {e}")
 
         # Fallback: simple stub
         return self._schedule_meeting_stub(email_text, recipients)
