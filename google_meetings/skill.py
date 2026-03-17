@@ -650,22 +650,25 @@ def parse_meeting_request(text: str):
         # Check for explicit hour in English format (e.g., "3pm", "10:30") anywhere in the text
         if re.search(r'\b\d{1,2}\s*(am|pm)\b', text, re.IGNORECASE):
             hour_captured = True
-        else:
-            # No hour found — will use default 9am in parse_relative_date, but log it
+        # else: remain False — we will require explicit time
+
+    # Only parse a full datetime if we captured an explicit hour; otherwise start_dt remains None
+    if hour_captured:
+        start_dt = parse_relative_date(time_text if time_text else text)
+
+        # Validation: ensure parsed time is not in the distant past (likely a bug) and not more than 60 days in future
+        now = datetime.now(start_dt.tzinfo)
+        if start_dt < now - timedelta(hours=2):
+            # Parsed a time that's already passed by more than 2 hours — likely incorrect
             logger = logging.getLogger(__name__)
-            logger.warning(f"No explicit hour found; defaulting to 9am. Text: {text[:200]!r}")
-
-    start_dt = parse_relative_date(time_text if time_text else text)
-
-    # Validation: ensure parsed time is not in the distant past (likely a bug) and not more than 60 days in future
-    now = datetime.now(start_dt.tzinfo)
-    if start_dt < now - timedelta(hours=2):
-        # Parsed a time that's already passed by more than 2 hours — likely incorrect
-        logger.warning(f"Parsed time {start_dt} is in the past; likely incorrect. Text snippet: {time_text or 'N/A'}")
-        return None
-    if start_dt > now + timedelta(days=60):
-        logger.warning(f"Parsed time {start_dt} is too far in future; likely incorrect. Text snippet: {time_text or 'N/A'}")
-        return None
+            logger.warning(f"Parsed time {start_dt} is in the past; likely incorrect. Text snippet: {time_text or 'N/A'}")
+            return None
+        if start_dt > now + timedelta(days=60):
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Parsed time {start_dt} is too far in future; likely incorrect. Text snippet: {time_text or 'N/A'}")
+            return None
+    else:
+        start_dt = None
 
     # 4. 提取主题
     # 方法1: 明确"主题是..."格式
@@ -733,6 +736,10 @@ def schedule_meeting(request_text: str, recipients: list = None):
     parsed = parse_meeting_request(request_text)
     if not parsed:
         return "❌ Unable to parse meeting time. Please specify clearly, e.g., 'tomorrow 3pm with Alice' or 'next Tuesday 10am'"
+
+    # Require explicit time (no fallback to 9am)
+    if parsed.get('start_dt') is None:
+        return "❌ Could not determine meeting time. Please include a specific time, e.g., 'tomorrow 3pm' or 'next Tuesday 10am'."
 
     # 2. Determine attendees: prefer explicit recipients over parser extraction
     attendees = []
