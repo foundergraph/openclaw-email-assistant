@@ -396,8 +396,6 @@ def create_meeting_event(
     full_description = f"""Meeting: {summary}
 
 Organizer: Jessie, Meeting Coordinator (bot) at FounderGraph AI
-Time: {start_dt.strftime('%Y-%m-%d %H:%M')} - {(start_dt + timedelta(minutes=duration_minutes)).strftime('%H:%M')} ({timezone})
-Duration: {duration_minutes} minutes
 
 Participants: {', '.join(attendees) if attendees else 'None'}
 
