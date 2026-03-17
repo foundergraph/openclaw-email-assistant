@@ -24,3 +24,8 @@ def main(config_path: str, openclaw_client=None):
 
     bridge = EmailBridge(config_path, openclaw_client)
     bridge.start()
+
+if __name__ == "__main__":
+    # When run as a script, use config relative to this file
+    config_path = os.path.join(os.path.dirname(__file__), "config", "local.yaml")
+    main(config_path, None)
