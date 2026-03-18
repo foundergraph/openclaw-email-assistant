@@ -173,6 +173,13 @@ class EmailBridge:
                     self._mark_as_read(email_id)
                     continue
 
+                # Skip Google Calendar notifications (invitations, updates, cancellations)
+                if self._is_calendar_notification(email_data):
+                    self.logger.info(f"⏭️ Skipping calendar notification: {email_data['subject']} from {email_data['from_email']}")
+                    self.processed_emails.add(email_id)
+                    self._mark_as_read(email_id)
+                    continue
+
                 # Permission check (whitelist or mention)
                 if not self._is_sender_allowed(email_data):
                     self.logger.info(f"⏭️ Skipping non-allowed sender: {email_data['from_email']}")
@@ -246,6 +253,37 @@ class EmailBridge:
         for trigger in triggers:
             if trigger.lower() in body_lower:
                 return True
+        return False
+
+    def _is_calendar_notification(self, email_data: Dict[str, Any]) -> bool:
+        """Detect if this email is a Google Calendar invitation/update/cancellation."""
+        sender = email_data['from_email'].lower()
+        # Known Google Calendar notification senders
+        calendar_senders = [
+            'calendar-notification@google.com',
+            'invitation@google.com',
+            'noreply@google.com',
+        ]
+        for cs in calendar_senders:
+            if cs in sender:
+                return True
+
+        # Check for X-Calendar-Event or X-Google-Original-From headers
+        headers = email_data.get('headers', [])
+        header_names = [h.lower() for h in email_data.keys() if h.startswith('header_')]
+        # If we stored headers as dict, check directly
+        for hdr in headers:
+            if isinstance(hdr, dict):
+                name = hdr.get('name', '').lower()
+                if name in ('x-calendar-event', 'x-google-original-from'):
+                    return True
+
+        # Check body for iCalendar data
+        if 'BEGIN:VCALENDAR' in body or 'END:VCALENDAR' in body:
+            return True
+        if ' METHOD:' in body and 'UID:' in body:
+            return True
+
         return False
 
     def _mark_as_read(self, message_id: str):
