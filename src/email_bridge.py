@@ -270,8 +270,6 @@ class EmailBridge:
 
         # Check for X-Calendar-Event or X-Google-Original-From headers
         headers = email_data.get('headers', [])
-        header_names = [h.lower() for h in email_data.keys() if h.startswith('header_')]
-        # If we stored headers as dict, check directly
         for hdr in headers:
             if isinstance(hdr, dict):
                 name = hdr.get('name', '').lower()
@@ -279,6 +277,7 @@ class EmailBridge:
                     return True
 
         # Check body for iCalendar data
+        body = email_data.get('body', '')
         if 'BEGIN:VCALENDAR' in body or 'END:VCALENDAR' in body:
             return True
         if ' METHOD:' in body and 'UID:' in body:
