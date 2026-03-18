@@ -166,12 +166,12 @@ def strip_thinking(text: str) -> str:
         r"^understanding",
         r"^memory",
         r"^context",
-        # New: any "I'll <action>" or "Let me <action>" describing internal processing
-        r"^i'll (?:use|call|invoke|trigger|run|execute|process|handle|schedule|create|send|lookup|find|get|fetch|generate)",
-        r"^i will (?:use|call|invoke|trigger|run|execute|process|handle|schedule|create|send|lookup|find|get|fetch|generate)",
-        r"^i'm (?:using|calling|invoking|triggering|running|executing|processing|handling|scheduling|creating|sending|looking up|fetching|generating)",
-        r"^i've (?:used|called|invoked|triggered|ran|executed|processed|handled|scheduled|created|sent|looked up|fetched|generated)",
-        r"^let me (?:use|call|invoke|trigger|run|execute|process|handle|schedule|create|send|lookup|find|get|fetch|generate)",
+        # Extended: any "I'll/Let me/I'm/I've" + action verbs (including help/assist/check/etc)
+        r"^i'll (?:use|call|invoke|trigger|run|execute|process|handle|schedule|create|send|lookup|find|get|fetch|generate|help|assist|attempt|try|check|see|verify|look|understand|determine)",
+        r"^i will (?:use|call|invoke|trigger|run|execute|process|handle|schedule|create|send|lookup|find|get|fetch|generate|help|assist|attempt|try|check|see|verify|look|understand|determine)",
+        r"^i'm (?:using|calling|invoking|triggering|running|executing|processing|handling|scheduling|creating|sending|looking up|fetching|generating|helping|assisting|attempting|trying|checking|seeing|verifying|looking|understanding|determining)",
+        r"^i've (?:used|called|invoked|triggered|ran|executed|processed|handled|scheduled|created|sent|looked up|fetched|generated|helped|assisted|attempted|tried|checked|seen|verified|looked|understood|determined)",
+        r"^let me (?:use|call|invoke|trigger|run|execute|process|handle|schedule|create|send|lookup|find|get|fetch|generate|help|assist|attempt|try|check|see|verify|look|understand|determine)",
         r"^using (?:the )?(?:skill|tool|function|system|api)",
         r"^calling (?:the )?(?:skill|tool|function|system|api)",
         r"^processing (?:with|via|using)",
