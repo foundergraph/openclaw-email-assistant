@@ -5,6 +5,12 @@ from datetime import datetime, timedelta, time
 from zoneinfo import ZoneInfo
 from typing import Optional, Tuple
 
+try:
+    from dateutil import parser as dateutil_parser
+    HAS_DATEUTIL = True
+except ImportError:
+    HAS_DATEUTIL = False
+
 class EnglishDateParser:
     """Parse English date/time expressions into datetime objects."""
 
@@ -14,13 +20,35 @@ class EnglishDateParser:
     def parse(self, text: str, now: Optional[datetime] = None) -> Optional[Tuple[datetime, datetime]]:
         """
         Parse a meeting time expression and return (start, end) datetimes.
-        Returns None if parsing fails.
+        Returns None if parsing fails or is too ambiguous.
         """
         if now is None:
             now = datetime.now(self.timezone)
 
         text_lower = text.lower().strip()
 
+        # If dateutil is available, try it first with dayfirst=True
+        if HAS_DATEUTIL:
+            try:
+                # Parse with fuzzy=True to ignore non-date words, dayfirst to prefer DD/MM
+                dt = dateutil_parser.parse(text_lower, fuzzy=True, dayfirst=True, default=now)
+                # Reject if year is far away (more than 2 years from now) -> ambiguous
+                if abs((dt - now).days) > 730:
+                    return None
+                # Ensure timezone-aware in the configured tz
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=self.timezone)
+                else:
+                    dt = dt.astimezone(self.timezone)
+                # If date part is today but time already passed, move to next day
+                if dt.date() == now.date() and dt < now:
+                    dt += timedelta(days=1)
+                end = dt + timedelta(minutes=30)
+                return dt, end
+            except (ValueError, OverflowError):
+                return None
+
+        # Fallback: simple heuristic patterns
         # "tomorrow at 3pm"
         if 'tomorrow' in text_lower:
             hour, minute = self._extract_hour_minute(text_lower)
@@ -35,7 +63,6 @@ class EnglishDateParser:
             if f'next {day}' in text_lower or f'next {day}s' in text_lower:
                 hour, minute = self._extract_hour_minute(text_lower)
                 if hour is not None:
-                    # Days ahead: find next occurrence of this weekday
                     days_ahead = (i - now.weekday() + 7) % 7
                     if days_ahead == 0:
                         days_ahead = 7
@@ -49,7 +76,6 @@ class EnglishDateParser:
             if hour is not None:
                 start = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
                 if start < now:
-                    # Time already passed today — skip to tomorrow
                     start += timedelta(days=1)
                 end = start + timedelta(minutes=30)
                 return start, end

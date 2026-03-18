@@ -640,14 +640,18 @@ def parse_meeting_request(text: str):
     }
 
 # 主调度函数
-def schedule_meeting(request_text: str, recipients: list = None):
+def schedule_meeting(request_text: str, recipients: list = None, existing_event_id: str = None):
     """
     Schedule a meeting from an email.
     Args:
         request_text: full email context (headers + body)
         recipients: explicit list of recipient emails (To + Cc) from the email.
                     If provided, it overrides any attendees parsed from the body.
-    Returns: dict with meeting details or error string
+        existing_event_id: if provided, update that event instead of creating a new one.
+    Returns: On success, returns dict with keys:
+        - 'event_id': Google Calendar event ID
+        - 'reply': user-facing message string
+        On error, returns an error string (will be sent to user).
     """
     # Extract summary from email subject
     subject_line = None
@@ -713,7 +717,133 @@ def schedule_meeting(request_text: str, recipients: list = None):
     except Exception as e:
         return f"❌ Calendar service unavailable: {e}"
 
-    # 4. 检查冲突
+    # 4. 如果提供了 existing_event_id，尝试更新现有事件而不是创建新事件
+    if existing_event_id:
+        try:
+            existing_event = service.events().get(calendarId='primary', eventId=existing_event_id).execute()
+        except HttpError:
+            existing_event = None
+        if existing_event:
+            # 计算新的开始和结束时间
+            new_start = parsed['start_dt']
+            new_end = new_start + timedelta(minutes=parsed['duration'])
+
+            # 检查时间是否变化
+            old_start_str = existing_event['start'].get('dateTime')
+            old_end_str = existing_event['end'].get('dateTime')
+            old_start = datetime.fromisoformat(old_start_str.replace('Z', '+00:00')) if old_start_str else None
+            old_end = datetime.fromisoformat(old_end_str.replace('Z', '+00:00')) if old_end_str else None
+            time_changed = (old_start != new_start or old_end != new_end)
+
+            # 检查参会者是否变化
+            old_attendees = set(a['email'] for a in existing_event.get('attendees', []))
+            new_attendees_set = set(attendees)
+            attendees_changed = old_attendees != new_attendees_set
+
+            if not time_changed and not attendees_changed:
+                # 没有变化，直接返回现有事件信息
+                meet_link = None
+                entry_points = existing_event.get('conferenceData', {}).get('entryPoints', [])
+                for ep in entry_points:
+                    if ep.get('entryPointType') == 'video':
+                        meet_link = ep.get('uri')
+                        break
+                html_link = existing_event.get('htmlLink')
+                reply = f"""✅ Meeting already scheduled!
+
+📅 Time: {existing_event['start']['dateTime']} - {existing_event['end']['dateTime']} (UTC)
+🌍 Your local time: {new_start.strftime('%Y-%m-%d %H:%M')} - {new_end.strftime('%H:%M')} (Asia/Shanghai)
+
+📍 Title: {existing_event.get('summary')}
+👥 Participants: {', '.join(old_attendees)}
+
+🔗 Google Meet:
+{meet_link or 'N/A'}
+
+📋 Calendar event:
+{html_link}
+
+(Found existing event; no changes made.)"""
+                return reply
+
+            # 如果时间有变化，需要进行冲突检查
+            if time_changed:
+                has_conflict, conflicts = check_conflict(service, new_start, parsed['duration'])
+                if has_conflict:
+                    if parsed.get('auto'):
+                        alternative = find_available_slot(service, new_start.date(), parsed.get('preferred_period'), parsed['duration'])
+                        if alternative:
+                            new_start = alternative
+                            new_end = new_start + timedelta(minutes=parsed['duration'])
+                            # 更新 new_end
+                        else:
+                            return "❌ No available slots on that day. Please try another day."
+                    else:
+                        conflict_list = "\n".join([f"  • {c['start'].strftime('%H:%M')}-{c['end'].strftime('%H:%M')}: {c['summary']}" for c in conflicts[:3]])
+                        return f"⚠️ Time conflict! Existing meetings:\n{conflict_list}\nPlease choose another time."
+
+            # 准备更新事件
+            # 生成新的标题和描述（保持与创建时一致）
+            summary = generate_meeting_title(request_text, parsed.get('summary'))
+            summary = re.sub(r'[^\x00-\x7F]+', ' ', summary).strip()
+            if not summary or len(summary) < 2:
+                summary = "Meeting"
+            # 构建英文描述的 description
+            full_description = f"""Meeting: {summary}
+
+Organizer: Jessie, Meeting Coordinator (bot) at FounderGraph AI
+
+Participants: {', '.join(attendees)}
+
+This meeting was scheduled/updated by Jessie, Meeting Coordinator (bot) at FounderGraph AI."""
+
+            event_body = {
+                'summary': summary,
+                'description': full_description,
+                'start': {'dateTime': new_start.isoformat(), 'timeZone': 'Asia/Shanghai'},
+                'end': {'dateTime': new_end.isoformat(), 'timeZone': 'Asia/Shanghai'},
+                'attendees': [{'email': email} for email in attendees],
+            }
+            # 保留原有 conferenceData 以维持 Meet 链接不变
+            if 'conferenceData' in existing_event:
+                event_body['conferenceData'] = existing_event['conferenceData']
+
+            updated = service.events().update(
+                calendarId='primary',
+                eventId=existing_event_id,
+                body=event_body,
+                conferenceDataVersion=1,
+                sendUpdates='all'
+            ).execute()
+
+            meet_link = None
+            entry_points = updated.get('conferenceData', {}).get('entryPoints', [])
+            for ep in entry_points:
+                if ep.get('entryPointType') == 'video':
+                    meet_link = ep.get('uri')
+                    break
+            html_link = updated.get('htmlLink')
+            reply = f"""✅ Meeting updated!
+
+📅 Time: {updated['start']['dateTime']} - {updated['end']['dateTime']} (UTC)
+🌍 Your local time: {new_start.strftime('%Y-%m-%d %H:%M')} - {new_end.strftime('%H:%M')} (Asia/Shanghai)
+
+📍 Title: {summary}
+👥 Participants: {', '.join(attendees)}
+
+🔗 Google Meet:
+{meet_link or 'N/A'}
+
+📋 Calendar event:
+{html_link}
+
+(This meeting was updated by Jessie, your AI assistant.)"""
+            return {
+                'event_id': updated['id'],
+                'reply': reply
+            }
+
+    # 4. 检查冲突 (原逻辑)
     has_conflict, conflicts = check_conflict(service, parsed['start_dt'], parsed['duration'])
     if has_conflict:
         if parsed.get('auto'):
@@ -771,7 +901,10 @@ def schedule_meeting(request_text: str, recipients: list = None):
 {existing.get('htmlLink')}
 
 (Found existing event; no duplicate created.)"""
-        return reply
+        return {
+            'event_id': existing['id'],
+            'reply': reply
+        }
 
     # 6. 创建事件
     event_info = create_meeting_event(
@@ -785,7 +918,7 @@ def schedule_meeting(request_text: str, recipients: list = None):
     if not event_info:
         return "❌ Failed to create event. Please check logs."
 
-    # 6. 准备 reply（英文）
+    # Prepare reply
     reply = f"""✅ Meeting scheduled!
 
 📅 Time: {event_info['start']['dateTime']} - {event_info['end']['dateTime']} (UTC)
@@ -802,7 +935,10 @@ def schedule_meeting(request_text: str, recipients: list = None):
 
 (A meeting invitation has been sent to all participants via email.)"""
 
-    return reply
+    return {
+        'event_id': event_info['id'],
+        'reply': reply
+    }
 
 # 命令行测试
 def find_available_slot(service, target_date, preferred_period=None, duration_minutes=DEFAULT_DURATION):

@@ -72,6 +72,10 @@ class EmailBridge:
         # Load processed emails history
         self._load_processed_emails()
 
+        # Thread index for conversation memory
+        self.thread_index_path = os.path.expanduser('~/.openclaw/email-assistant/thread_index.json')
+        self.thread_index = self._load_thread_index()
+
     def _setup_logging(self):
         level = getattr(logging, self.config['logging'].get('level', 'INFO'))
         fmt = self.config['logging'].get('format', '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -105,6 +109,66 @@ class EmailBridge:
                 json.dump(list(self.processed_emails), f)
         except Exception as e:
             self.logger.error(f"Failed to save processed emails: {e}")
+
+    def _load_thread_index(self) -> dict:
+        """Load thread index from disk."""
+        try:
+            if os.path.exists(self.thread_index_path):
+                with open(self.thread_index_path, 'r') as f:
+                    return json.load(f)
+        except Exception as e:
+            self.logger.error(f"Failed to load thread index: {e}")
+        return {"threads": {}, "message_to_thread": {}}
+
+    def _save_thread_index(self):
+        """Save thread index to disk."""
+        try:
+            with open(self.thread_index_path, 'w') as f:
+                json.dump(self.thread_index, f, indent=2)
+        except Exception as e:
+            self.logger.error(f"Failed to save thread index: {e}")
+
+    def _log_api_failure(self, sender_email: str, reason: str):
+        """Log OpenClaw API failures to Notion Activity Tracker for visibility."""
+        try:
+            from datetime import datetime
+            import requests
+            # Use same Notion credentials as in heartbeat
+            notion_token = open('/home/ubuntu/.config/notion/api_key').read().strip()
+            headers = {
+                "Authorization": f"Bearer {notion_token}",
+                "Content-Type": "application/json",
+                "Notion-Version": "2022-06-28"
+            }
+            db_id = "475de8ed-920a-4859-96f1-94c3f31e431a"  # Activity Tracker
+            payload = {
+                "parent": {"database_id": db_id},
+                "properties": {
+                    "Timestamp": {"date": {"start": datetime.utcnow().isoformat()}},
+                    "Action": {"title": [{"text": {"content": "EmailBridge OpenClaw API failure"}}]},
+                    "Type": {"select": {"name": "Tool Call"}},
+                    "Target": {"rich_text": [{"text": {"content": f"{sender_email} — {reason}"}}]},
+                    "Result": {"select": {"name": "Failed"}},
+                    "Notes": {"rich_text": [{"text": {"content": "Multiple retries exhausted; email skipped."}}]}
+                }
+            }
+            requests.post("https://api.notion.com/v1/pages", headers=headers, json=payload, timeout=5)
+        except Exception:
+            pass  # avoid raising
+
+    def _get_thread_root(self, email_data: dict) -> str:
+        """
+        Determine the root Message-ID of the thread this email belongs to.
+        RFC 5322: References header lists ancestor Message-IDs in order; first is root.
+        Falls back to In-Reply-To, then own Message-ID.
+        """
+        refs = email_data.get('references', [])
+        if refs:
+            return refs[0].strip('<>')
+        in_reply_to = email_data.get('in_reply_to')
+        if in_reply_to:
+            return in_reply_to.strip('<>')
+        return email_data.get('message_id', '')
 
     def authenticate(self):
         """Authenticate with Gmail and Calendar APIs using service account."""
@@ -189,7 +253,7 @@ class EmailBridge:
                 # Process
                 self.logger.info(f"📧 Processing email from: {email_data['from']} - Subject: {email_data['subject']}")
                 self.logger.debug(f"Body (first 200 chars): {email_data['body'][:200]!r}")
-                self._process_email(email_data)
+                self._process_email(email_data, email_id)
 
                 self.processed_emails.add(email_id)
                 self._mark_as_read(email_id)
@@ -226,6 +290,11 @@ class EmailBridge:
 
         recipient_emails = [e for e in recipient_emails if e.lower() != sender_email.lower()]
 
+        # Threading headers
+        message_id = get_header('message-id')
+        references = get_header('references').split() if get_header('references') else []
+        in_reply_to = get_header('in-reply-to')
+
         return {
             'id': email['id'],
             'from': from_header,
@@ -236,7 +305,10 @@ class EmailBridge:
             'recipient_emails': recipient_emails,
             'subject': subject,
             'body': body,
-            'thread_id': email['threadId']
+            'thread_id': email['threadId'],
+            'message_id': message_id,
+            'references': references,
+            'in_reply_to': in_reply_to
         }
 
     def _is_sender_allowed(self, email_data: Dict[str, Any]) -> bool:
@@ -296,7 +368,7 @@ class EmailBridge:
         except Exception as e:
             self.logger.error(f"Failed to mark as read: {e}")
 
-    def _process_email(self, email_data: Dict[str, Any]):
+    def _process_email(self, email_data: Dict[str, Any], email_id: str):
         """
         Send email to OpenClaw for intent classification and action.
         Then send reply if needed.
@@ -351,25 +423,34 @@ For other emails, write a short, friendly reply as Jessie.""" ) },
             api_url = f"{gateway_url.rstrip('/')}/v1/chat/completions"
 
             self.logger.info("Calling OpenClaw to classify email...")
-            try:
-                response = requests.post(api_url, headers=headers, json=payload, timeout=180)
-                response.raise_for_status()
-            except requests.exceptions.Timeout:
-                self.logger.error("OpenClaw API timeout — will retry once")
-                # Retry once after brief wait
-                import time
-                time.sleep(2)
+            max_attempts = 3
+            backoffs = [1, 2, 4]  # seconds between retries
+            response = None
+            for attempt in range(max_attempts):
                 try:
-                    response = requests.post(api_url, headers=headers, json=payload, timeout=180)
+                    timeout = 300  # seconds
+                    response = requests.post(api_url, headers=headers, json=payload, timeout=timeout)
                     response.raise_for_status()
+                    break  # success
                 except requests.exceptions.Timeout:
-                    self.logger.error("OpenClaw API timeout on retry — giving up")
-                    return
+                    self.logger.error(f"OpenClaw API timeout (attempt {attempt+1}/{max_attempts})")
+                    if attempt < max_attempts - 1:
+                        time.sleep(backoffs[attempt])
+                        continue
+                    else:
+                        self.logger.error("OpenClaw API timeout after all retries — giving up")
+                        self._log_api_failure(sender, "timeout")
+                        return
                 except requests.exceptions.RequestException as e:
-                    self.logger.error(f"OpenClaw API error on retry: {e}")
-                    return
-            except requests.exceptions.RequestException as e:
-                self.logger.error(f"OpenClaw API error: {e}")
+                    self.logger.error(f"OpenClaw API error (attempt {attempt+1}/{max_attempts}): {e}")
+                    if attempt < max_attempts - 1:
+                        time.sleep(backoffs[attempt])
+                        continue
+                    else:
+                        self.logger.error(f"OpenClaw API error after retries: {e}")
+                        self._log_api_failure(sender, str(e))
+                        return
+            if response is None:
                 return
 
             res_json = response.json()
@@ -382,6 +463,13 @@ For other emails, write a short, friendly reply as Jessie.""" ) },
 
             reply = None
             if tool_calls:
+                # Determine thread root and any existing event ID for updates
+                thread_root = self._get_thread_root(email_data)
+                existing_event_id = None
+                if thread_root and thread_root in self.thread_index.get('threads', {}):
+                    existing_event_id = self.thread_index['threads'][thread_root].get('event_id')
+                    self.logger.debug(f"Thread {thread_root} maps to existing event {existing_event_id}")
+
                 for call in tool_calls:
                     func_name = call.get("function", {}).get("name")
                     if func_name in ("schedule_meeting", "create_notion_task"):
@@ -394,13 +482,20 @@ For other emails, write a short, friendly reply as Jessie.""" ) },
                             break
 
                         if func_name == "schedule_meeting":
-                            reply = self._handle_schedule_meeting(email_text, recipient_emails)
+                            reply = self._handle_schedule_meeting(
+                                email_text,
+                                recipient_emails,
+                                existing_event_id=existing_event_id,
+                                thread_root=thread_root
+                            )
                         elif func_name == "create_notion_task":
                             reply = self._handle_create_notion_task(email_text, sender)
                         break
 
             if not reply and message_content:
                 reply = message_content
+                if self.strip_thinking:
+                    reply = strip_thinking(reply)
 
             if reply:
                 self._send_reply(sender, subject, reply, email_data['thread_id'])
@@ -410,10 +505,18 @@ For other emails, write a short, friendly reply as Jessie.""" ) },
         except Exception as e:
             self.logger.error(f"Error processing email: {e}")
 
-    def _handle_schedule_meeting(self, email_text: str, recipients: list) -> Optional[str]:
+    def _handle_schedule_meeting(
+        self,
+        email_text: str,
+        recipients: list,
+        existing_event_id: str = None,
+        thread_root: str = None
+    ) -> Optional[str]:
         """
         Schedule a meeting based on email content.
         Uses google_meetings skill bundled in this repo.
+        If existing_event_id is provided, update that event instead of creating a new one.
+        On success, record the event ID in the thread index.
         """
         try:
             # Import from local google_meetings package (relative to repo root)
@@ -425,16 +528,35 @@ For other emails, write a short, friendly reply as Jessie.""" ) },
                 sys.path.insert(0, repo_root)
             from google_meetings.skill import schedule_meeting as gm_schedule_meeting
 
-            # email_text contains headers + body. We also have recipients list.
-            # The skill will extract the sender itself from the From header.
-            result = gm_schedule_meeting(email_text, recipients=recipients)
-            if result:
-                return f"✅ Meeting scheduled: {result.get('start')} — {result.get('meet_link')}"
+            # Call skill with optional existing_event_id
+            result = gm_schedule_meeting(
+                email_text,
+                recipients=recipients,
+                existing_event_id=existing_event_id
+            )
         except Exception as e:
-            self.logger.warning(f"google_meetings skill not available: {e}")
+            self.logger.warning(f"google_meetings skill unavailable: {e}")
+            # Fallback to simple stub
+            return self._schedule_meeting_stub(email_text, recipients)
 
-        # Fallback: simple stub
-        return self._schedule_meeting_stub(email_text, recipients)
+        if result is None:
+            return None
+
+        if isinstance(result, dict):
+            # Expected keys: 'event_id', 'reply'
+            event_id = result.get('event_id')
+            reply_text = result.get('reply')
+            if event_id and thread_root:
+                self.thread_index.setdefault('threads', {})[thread_root] = {
+                    'event_id': event_id,
+                    'updated_at': datetime.datetime.utcnow().isoformat() + 'Z'
+                }
+                self._save_thread_index()
+                self.logger.info(f"Thread {thread_root} associated with event {event_id}")
+            return reply_text
+        else:
+            # Assume result is a string (e.g., error message or legacy format)
+            return result
 
     def _schedule_meeting_stub(self, email_text: str, recipients: list) -> Optional[str]:
         """Very basic meeting scheduling fallback."""

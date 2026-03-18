@@ -4,3 +4,4 @@ google-auth-oauthlib>=0.5.0
 pyyaml>=6.0
 Jinja2>=3.0.0
 openclaw>=0.4.0  # Adjust version to match your installation
+python-dateutil>=2.9
