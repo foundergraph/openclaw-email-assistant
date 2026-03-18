@@ -33,13 +33,9 @@ USER_TIMEZONE = os.getenv('GOOGLE_MEETINGS_TIMEZONE', 'Asia/Shanghai')
 SEND_EMAIL = True  # 是否发送邀请邮件
 # ==================================
 
-# 中文星期映射
+# 英文星期映射
 WEEKDAYS_CN = {
-    # Chinese short forms
-    '周一': 0, '周二': 1, '周三': 2, '周四': 3, '周五': 4, '周六': 5, '周日': 6, '星期天': 6,
-    # English full names
     'monday': 0, 'tuesday': 1, 'wednesday': 2, 'thursday': 3, 'friday': 4, 'saturday': 5, 'sunday': 6,
-    # Abbreviations
     'mon': 0, 'tue': 1, 'wed': 2, 'thu': 3, 'fri': 4, 'sat': 5, 'sun': 6
 }
 
@@ -104,22 +100,7 @@ def parse_relative_date(text: str, base_date: datetime = None):
 
     # 匹配 "今天/明天/后天/下X"
     day_offset = 0
-    if '今天' in text:
-        day_offset = 0
-    elif '明天' in text:
-        day_offset = 1
-    elif '后天' in text:
-        day_offset = 2
-    elif '下' in text:
-        # 下周一/下周二
-        for cn_day, num in WEEKDAYS_CN.items():
-            if cn_day in text:
-                today_weekday = base_date.weekday()
-                days_ahead = num - today_weekday
-                if days_ahead <= 0:
-                    days_ahead += 7
-                day_offset = days_ahead + 7  # "下" = +7
-                break
+
 
     # English patterns (if no Chinese pattern matched)
     if day_offset == 0 and not any(kw in text for kw in ['今天', '明天', '后天', '下']):
@@ -148,36 +129,12 @@ def parse_relative_date(text: str, base_date: datetime = None):
                             days_ahead += 7
                         day_offset = days_ahead
                         break
-    # 数字日期（3月10日）
-    date_match = re.search(r'(\d{1,2})月(\d{1,2})日', text)
-    if date_match:
-        month = int(date_match.group(1))
-        day = int(date_match.group(2))
-        target_date = datetime(base_date.year, month, day)
-        if target_date < base_date:
-            target_date = target_date.replace(year=base_date.year+1)
-        day_offset = (target_date - base_date).days
 
     target_date = base_date + timedelta(days=day_offset)
 
     # 提取时间
     hour = 9  # 默认上午9点
     minute = 0
-
-    # 匹配 "上午/下午/晚上" + 时间
-    hour_captured = False
-    time_match = re.search(r'(上午|下午|晚上|晚)?(\d{1,2})[:点](\d{0,2})', text)
-    if time_match:
-        period = time_match.group(1)
-        hour = int(time_match.group(2))
-        minute_str = time_match.group(3)
-        minute = int(minute_str) if minute_str else 0
-
-        if period in ('下午', '晚上', '晚') and hour < 12:
-            hour += 12
-        elif period in ('上午',) and hour == 12:
-            hour = 0
-        hour_captured = True
 
     # If hour is still default 9, try English time patterns (e.g., "3pm", "3:30", "10am")
     if hour == 9 and minute == 0:
@@ -553,13 +510,20 @@ def parse_meeting_request(text: str):
     }
     """
     import re
+
+    # Disable Chinese parsing: if any Chinese characters present, return None
+    if re.search(r'[\u4e00-\u9fff]', text):
+        logger = logging.getLogger(__name__)
+        logger.info("Chinese text detected; parse_meeting_request aborted")
+        return None
+
     hour_captured = False
     period_hint = None
-    if '上午' in text or 'morning' in text:
+    if 'morning' in text:
         period_hint = 'morning'
-    elif '下午' in text or 'afternoon' in text or 'pm' in text:
+    elif 'afternoon' in text or 'pm' in text:
         period_hint = 'afternoon'
-    elif '晚上' in text or 'evening' in text or 'night' in text:
+    elif 'evening' in text or 'night' in text:
         period_hint = 'evening'
 
     # 1. 提取邮箱：优先从邮件头 (To:/Cc:) 解析，后备全文本扫描
@@ -683,7 +647,6 @@ def parse_meeting_request(text: str):
         for email in attendees:
             remaining = remaining.replace(email, '')
         # 移除常见动词
-        remaining = re.sub(r'^(和|跟|与|与.*?)+', '', remaining.strip())
         remaining = remaining.strip(' .,，、的 用英文 in English')
         if remaining and len(remaining) < 30:
             summary = remaining

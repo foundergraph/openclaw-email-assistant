@@ -328,6 +328,8 @@ class EmailBridge:
                 "messages": [
                     {"role": "system", "content": self.config.get('system_prompt', """You are Jessie, the Meeting Coordinator at FounderGraph AI. When writing an email reply, your output MUST contain ONLY the final email body. DO NOT include any analysis, reasoning, planning, or meta-commentary. Do not mention you are an AI or bot.
 
+IMPORTANT: Always respond in English only. Do not use Chinese characters or any non-English language.
+
 If the email is a meeting request, call schedule_meeting.
 If it's a task request, call create_notion_task.
 For other emails, write a short, friendly reply as Jessie.""" ) },
