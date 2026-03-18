@@ -307,32 +307,6 @@ def find_existing_event(service, start_dt: datetime, attendees: list, tolerance_
         # Match found
         return ev
     return None
-    """
-    检查 proposed_start 时间是否有冲突
-    返回：(冲突?, 冲突事件列表)
-    """
-    proposed_end = proposed_start + timedelta(minutes=duration_minutes)
-
-    # 查询从 proposed_start 往前1天到往后1天的事件（足够覆盖）
-    query_start = proposed_start - timedelta(hours=12)
-    query_end = proposed_end + timedelta(hours=12)
-
-    busy_slots = find_busy_slots(service, query_start, query_end)
-
-    utc_tz = ZoneInfo('UTC')
-    conflicts = []
-    for slot in busy_slots:
-        # 确保比较时区一致：将 slot 转为 UTC 与 proposed (already aware) 比较
-        slot_start_utc = slot['start'].astimezone(utc_tz)
-        slot_end_utc = slot['end'].astimezone(utc_tz)
-        prop_start_utc = proposed_start.astimezone(utc_tz)
-        prop_end_utc = proposed_end.astimezone(utc_tz)
-
-        # 检查重叠
-        if not (prop_end_utc <= slot_start_utc or prop_start_utc >= slot_end_utc):
-            conflicts.append(slot)
-
-    return len(conflicts) > 0, conflicts
 
 def create_meeting_event(
     service,
